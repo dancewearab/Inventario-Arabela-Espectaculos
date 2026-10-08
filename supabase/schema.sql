@@ -148,20 +148,37 @@ create trigger trg_events_updated
 
 -- ── 10. TRIGGER: AUTO-CREATE USER PROFILE ───────────────────
 create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public
+as $$
+declare
+  user_role_val public.user_role := 'dancer';
+  raw_role text;
 begin
+  if new.raw_user_meta_data is not null then
+    raw_role := lower(trim(new.raw_user_meta_data->>'role'));
+    if raw_role in ('admin', 'coordinator', 'dancer') then
+      user_role_val := raw_role::public.user_role;
+    end if;
+  end if;
+
   insert into public.users (id, email, full_name, role)
   values (
     new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    coalesce((new.raw_user_meta_data->>'role')::user_role, 'dancer')
-  );
+    coalesce(new.email, ''),
+    coalesce(nullif(trim(new.raw_user_meta_data->>'full_name'), ''), split_part(coalesce(new.email, 'usuario'), '@', 1)),
+    user_role_val
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = excluded.full_name,
+    role = excluded.role;
+
   return new;
 end;
 $$;
 
-create trigger on_auth_user_created
+create or replace trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
