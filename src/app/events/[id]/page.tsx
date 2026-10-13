@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Calendar, MapPin, Shirt, User, X, Search } from 'lucide-react'
+import { ArrowLeft, Plus, Calendar, Clock, MapPin, Shirt, User, X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -306,6 +306,15 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
             <p className="text-sm font-semibold text-gray-800 mt-0.5">{formatDate(event.date)}</p>
           </div>
         </div>
+        {event.start_time && (
+          <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-start gap-2">
+            <Clock className="w-4 h-4 text-violet-500 mt-0.5" />
+            <div>
+              <p className="text-xs text-gray-400">Hora de Inicio</p>
+              <p className="text-sm font-semibold text-violet-700 mt-0.5">{event.start_time}</p>
+            </div>
+          </div>
+        )}
         {event.location && (
           <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-start gap-2">
             <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />

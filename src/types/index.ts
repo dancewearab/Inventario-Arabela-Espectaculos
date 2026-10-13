@@ -75,6 +75,7 @@ export interface Event {
   id: string
   name: string
   date: string
+  start_time?: string
   location?: string
   description?: string
   coordinator_id: string

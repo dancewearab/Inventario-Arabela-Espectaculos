@@ -38,6 +38,7 @@ create table public.events (
   id              uuid primary key default uuid_generate_v4(),
   name            text not null,
   date            date not null,
+  start_time      text,
   location        text,
   description     text,
   coordinator_id  uuid not null references public.users(id) on delete set null,
