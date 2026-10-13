@@ -11,36 +11,15 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { QRScannerModal } from '@/components/qr/qr-scanner-modal'
 
 export function BottomNav() {
   const pathname = usePathname()
-  const router = useRouter()
-  const [quickCodeOpen, setQuickCodeOpen] = useState(false)
-  const [codeOrId, setCodeOrId] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   // Do not show on auth pages or QR full screen
   if (pathname === '/login' || pathname.startsWith('/qr/')) {
     return null
-  }
-
-  const handleQuickAction = (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = codeOrId.trim()
-    if (trimmed) {
-      setQuickCodeOpen(false)
-      setCodeOrId('')
-      // If full URL is pasted, extract the last segment
-      if (trimmed.includes('/qr/')) {
-        const parts = trimmed.split('/qr/')
-        router.push(`/qr/${parts[parts.length - 1]}`)
-      } else {
-        router.push(`/qr/${trimmed}`)
-      }
-    }
   }
 
   const navItems = [
@@ -60,9 +39,9 @@ export function BottomNav() {
               return (
                 <button
                   key={idx}
-                  onClick={() => setQuickCodeOpen(true)}
+                  onClick={() => setScannerOpen(true)}
                   className="flex flex-col items-center -mt-5 focus:outline-none group"
-                  aria-label="Escanear o ingresar código"
+                  aria-label="Escanear código QR con la cámara"
                 >
                   <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-violet-500/30 group-active:scale-95 transition-transform duration-150 ring-4 ring-white">
                     <QrCode className="w-6 h-6" />
@@ -99,49 +78,8 @@ export function BottomNav() {
         </div>
       </div>
 
-      {/* Quick QR / Code Lookup Modal */}
-      <Dialog open={quickCodeOpen} onOpenChange={setQuickCodeOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-purple-500 text-white flex items-center justify-center mx-auto mb-2 shadow-md shadow-violet-200">
-              <QrCode className="w-6 h-6" />
-            </div>
-            <DialogTitle className="text-center text-xl font-bold">Escanear o Ingresar Código</DialogTitle>
-            <DialogDescription className="text-center text-sm text-gray-500">
-              Ingresa el código o ID del vestuario o lista para registrar retiros, devoluciones, lavado o daños.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleQuickAction} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Input
-                placeholder="Ej. VEST-001 o pega el enlace / ID..."
-                value={codeOrId}
-                onChange={(e) => setCodeOrId(e.target.value)}
-                className="h-12 text-base text-center font-medium rounded-xl border-gray-200 focus:border-violet-500 focus:ring-violet-500"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setQuickCodeOpen(false)}
-                className="flex-1 h-11 rounded-xl"
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={!codeOrId.trim()}
-                className="flex-1 h-11 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold shadow-md shadow-violet-200"
-              >
-                Continuar
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Modal de escáner con cámara del dispositivo */}
+      <QRScannerModal open={scannerOpen} onOpenChange={setScannerOpen} />
     </>
   )
 }

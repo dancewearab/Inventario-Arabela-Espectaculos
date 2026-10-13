@@ -69,6 +69,9 @@ async function apiFetch<T>(path: string, init: RequestInit): Promise<T> {
 
 export const listService = {
   async getById(id: string): Promise<List | null> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    if (!isUuid) return null
+
     const supabase = await createSupabaseClient()
     const { data: list, error: listError } = await supabase
       .from('lists')

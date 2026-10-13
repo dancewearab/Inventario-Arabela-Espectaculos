@@ -93,9 +93,11 @@ export const costumeService = {
     return allData
   },
 
-  async getById(id: string): Promise<Costume | null> {
+  async getById(idOrCode: string): Promise<Costume | null> {
     const supabase = createClient()
-    const { data, error } = await supabase
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrCode)
+
+    let query = supabase
       .from('costumes')
       .select(`
         *,
@@ -103,8 +105,14 @@ export const costumeService = {
         current_event:events!costumes_current_event_id_fkey(id, name, date),
         list_items(id, list_id, list:lists(id, name))
       `)
-      .eq('id', id)
-      .single()
+
+    if (isUuid) {
+      query = query.or(`id.eq.${idOrCode},code.eq.${idOrCode}`)
+    } else {
+      query = query.eq('code', idOrCode)
+    }
+
+    const { data, error } = await query.maybeSingle()
 
     if (error) return null
     return data
