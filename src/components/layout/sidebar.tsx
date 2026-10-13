@@ -67,27 +67,34 @@ export function Sidebar({ user }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-          const Icon = item.icon
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
-                isActive
-                  ? 'bg-violet-50 text-violet-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              )}
-            >
-              <Icon className={cn('w-4 h-4', isActive ? 'text-violet-600' : 'text-gray-400')} />
-              {item.label}
-              {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500" />}
-            </Link>
-          )
-        })}
+        {navItems
+          .filter((item) => {
+            if (item.href === '/settings') {
+              return user?.role === 'admin'
+            }
+            return true
+          })
+          .map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+                  isActive
+                    ? 'bg-violet-50 text-violet-700'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                )}
+              >
+                <Icon className={cn('w-4 h-4', isActive ? 'text-violet-600' : 'text-gray-400')} />
+                {item.label}
+                {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-500" />}
+              </Link>
+            )
+          })}
       </nav>
 
       {/* User section */}
