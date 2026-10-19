@@ -79,7 +79,6 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         const slug = parts[parts.length - 1].split('?')[0].split('#')[0]
         router.push(`/qr/${slug}`)
       } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-        // Si es otra URL del sistema
         try {
           const urlObj = new URL(trimmed)
           router.push(urlObj.pathname)
@@ -93,6 +92,21 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
     [router, onOpenChange, stopScanner]
   )
 
+  const ensureVideoAttributes = useCallback(() => {
+    try {
+      const videoElem = document.querySelector(`#${readerElementId} video`) as HTMLVideoElement | null
+      if (videoElem) {
+        videoElem.setAttribute('playsinline', 'true')
+        videoElem.setAttribute('webkit-playsinline', 'true')
+        videoElem.setAttribute('autoplay', 'true')
+        videoElem.muted = true
+        videoElem.play().catch(() => {})
+      }
+    } catch {
+      // Ignorar
+    }
+  }, [readerElementId])
+
   const startScanner = useCallback(
     async (cameraIdOrFacing?: string | { facingMode: string }) => {
       if (typeof window === 'undefined') return
@@ -103,10 +117,11 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
       try {
         const { Html5Qrcode: QrScannerEngine } = await import('html5-qrcode')
 
-        // Asegurar detención previa
+        // Asegurar detención previa limpia
         if (scannerRef.current && isScanningRef.current) {
           try {
             await scannerRef.current.stop()
+            await scannerRef.current.clear()
           } catch {
             // Ignorar
           }
@@ -129,17 +144,18 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         }
 
         const cameraConfig = cameraIdOrFacing || { facingMode: 'environment' }
+
+        // Sin forzar aspectRatio a 1.0 para que WebRTC no falle en móviles
         const scanOptions = {
           fps: 15,
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
-            const edge = Math.floor(minEdge * 0.75)
+            const edge = Math.floor(minEdge * 0.72)
             return { width: edge, height: edge }
           },
-          aspectRatio: 1.0,
         }
 
-        // Intento 1: Configuración solicitada o cámara trasera (como funcionaba originalmente)
+        // Intento 1: Cámara trasera (ideal para escanear en celular)
         try {
           await scanner.start(
             cameraConfig,
@@ -150,16 +166,13 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
             () => {}
           )
         } catch (firstError) {
-          console.warn('Intento principal falló, probando fallback para otros dispositivos:', firstError)
+          console.warn('Intento con cámara trasera falló, probando cámara frontal/predeterminada:', firstError)
 
-          // Fallback 1: Si falló la cámara trasera (ej. laptops o dispositivos sin environment), intentar cámara frontal
+          // Fallback 1: Si falló la cámara trasera (ej. laptops sin cámara trasera), intentar cámara frontal
           try {
             await scanner.start(
               { facingMode: 'user' },
-              {
-                fps: 15,
-                qrbox: scanOptions.qrbox,
-              },
+              scanOptions,
               (decodedText) => {
                 handleScanSuccess(decodedText)
               },
@@ -172,10 +185,7 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
             if (camerasList.length > 0) {
               await scanner.start(
                 camerasList[0].id,
-                {
-                  fps: 15,
-                  qrbox: scanOptions.qrbox,
-                },
+                scanOptions,
                 (decodedText) => {
                   handleScanSuccess(decodedText)
                 },
@@ -189,6 +199,11 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
 
         isScanningRef.current = true
         setCameraLoading(false)
+
+        // Forzar atributos inline de video para Safari iOS y Chrome móvil
+        ensureVideoAttributes()
+        setTimeout(ensureVideoAttributes, 150)
+        setTimeout(ensureVideoAttributes, 400)
 
         // Verificar si soporta linterna/torch
         try {
@@ -214,11 +229,13 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
           msg = 'Permiso de cámara denegado. Permite el acceso a la cámara en los ajustes de tu navegador.'
         } else if (errObj?.name === 'NotFoundError') {
           msg = 'No se encontró ninguna cámara en este dispositivo.'
+        } else if (errObj?.name === 'NotReadableError' || errObj?.message?.includes('in use')) {
+          msg = 'La cámara está siendo usada por otra aplicación. Ciérrala y reintenta.'
         }
         setCameraError(msg)
       }
     },
-    [handleScanSuccess]
+    [handleScanSuccess, ensureVideoAttributes]
   )
 
   // Iniciar o detener la cámara según el estado del modal y el modo seleccionado
@@ -314,33 +331,36 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         </DialogHeader>
 
         {mode === 'camera' ? (
-          <div className="relative w-full flex flex-col items-center bg-black min-h-[380px]">
+          <div className="relative w-full h-[380px] bg-black overflow-hidden flex items-center justify-center">
             {/* Contenedor donde Html5Qrcode monta el stream de video */}
             <div
               id={readerElementId}
-              className="w-full h-full min-h-[360px] flex items-center justify-center overflow-hidden [&_video]:w-full [&_video]:h-full [&_video]:object-cover"
+              className="w-full h-full relative"
             />
 
             {/* Overlay visual del visor de escaneo */}
             {!cameraLoading && !cameraError && (
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                {/* Cuadro de enfoque */}
-                <div className="relative w-64 h-64 rounded-2xl border-2 border-violet-500/40 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                  {/* Esquinas estilizadas */}
-                  <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-violet-400 rounded-tl-xl" />
-                  <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-violet-400 rounded-tr-xl" />
-                  <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-violet-400 rounded-bl-xl" />
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-violet-400 rounded-br-xl" />
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10">
+                {/* Cuadro de enfoque centrado */}
+                <div className="relative w-64 h-64 rounded-2xl border-2 border-violet-500/50">
+                  {/* Esquinas estilizadas iluminadas */}
+                  <div className="absolute -top-1 -left-1 w-7 h-7 border-t-4 border-l-4 border-violet-400 rounded-tl-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -top-1 -right-1 w-7 h-7 border-t-4 border-r-4 border-violet-400 rounded-tr-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -bottom-1 -left-1 w-7 h-7 border-b-4 border-l-4 border-violet-400 rounded-bl-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -bottom-1 -right-1 w-7 h-7 border-b-4 border-r-4 border-violet-400 rounded-br-xl shadow-[0_0_10px_#a855f7]" />
 
                   {/* Línea láser animada */}
                   <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent shadow-[0_0_8px_#a855f7] animate-pulse top-1/2 -translate-y-1/2" />
                 </div>
+                <p className="mt-4 text-xs font-medium text-gray-300 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10 shadow-md">
+                  Enfoca el código QR en el recuadro
+                </p>
               </div>
             )}
 
             {/* Spinner de carga inicial de cámara */}
             {cameraLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 gap-3 z-10">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 gap-3 z-20">
                 <Loader2 className="w-10 h-10 text-violet-400 animate-spin" />
                 <p className="text-sm font-medium text-gray-300">Iniciando cámara...</p>
                 <p className="text-xs text-gray-500">Asegúrate de permitir el acceso</p>
@@ -349,7 +369,7 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
 
             {/* Error de cámara (permiso denegado, etc) */}
             {cameraError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950 p-6 text-center gap-3 z-10">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950 p-6 text-center gap-3 z-20">
                 <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
                   <AlertCircle className="w-6 h-6" />
                 </div>
