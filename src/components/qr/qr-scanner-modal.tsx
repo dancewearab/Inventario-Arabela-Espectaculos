@@ -42,13 +42,55 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const isScanningRef = useRef(false)
   const sessionCountRef = useRef(0)
+  const observerRef = useRef<MutationObserver | null>(null)
   const readerElementId = 'html5-qr-reader-container'
+
+  // Configura y fuerza los atributos necesarios para reproducción inline en iOS/Android
+  const ensureVideoPlaying = useCallback((containerEl: HTMLElement) => {
+    const video = containerEl.querySelector('video') as HTMLVideoElement | null
+    if (!video) return
+
+    // Atributos indispensables para evitar pantalla negra en Safari (iOS) y Chrome (Android)
+    video.setAttribute('playsinline', 'true')
+    video.setAttribute('webkit-playsinline', 'true')
+    video.setAttribute('autoplay', 'true')
+    video.setAttribute('muted', 'true')
+    video.muted = true
+    video.playsInline = true
+
+    // Estilos inline forzados para que cubra exactamente el contenedor
+    video.style.width = '100%'
+    video.style.height = '100%'
+    video.style.objectFit = 'cover'
+    video.style.display = 'block'
+    video.style.position = 'absolute'
+    video.style.top = '0'
+    video.style.left = '0'
+    video.style.zIndex = '1'
+
+    const playPromise = video.play()
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        // Si el navegador bloqueó el autoplay, reintentar cuando carguen metadatos
+        const onMetadata = () => {
+          video.play().catch(() => {})
+          video.removeEventListener('loadedmetadata', onMetadata)
+        }
+        video.addEventListener('loadedmetadata', onMetadata)
+      })
+    }
+  }, [])
 
   // Detener y liberar el escáner y la cámara
   const stopScanner = useCallback(async () => {
     isScanningRef.current = false
     setTorchOn(false)
     setHasTorch(false)
+
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+      observerRef.current = null
+    }
 
     if (scannerRef.current) {
       try {
@@ -152,20 +194,21 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
 
       if (currentSession !== sessionCountRef.current) return
 
+      // Observador de mutaciones para inyectar playsinline y autoplay tan pronto se cree el <video>
+      if (observerRef.current) observerRef.current.disconnect()
+      observerRef.current = new MutationObserver(() => {
+        if (container) ensureVideoPlaying(container)
+      })
+      observerRef.current.observe(container, { childList: true, subtree: true })
+
       try {
         const { Html5Qrcode: QrScannerEngine } = await import('html5-qrcode')
         const scanner = new QrScannerEngine(readerElementId)
         scannerRef.current = scanner
 
+        // Escaneo full frame: sin qrbox para que no inyecte el div #qr-shaded-region con bordes negros opacos
         const scanConfig = {
           fps: 15,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
-            if (!minEdge || minEdge <= 0) return { width: 250, height: 250 }
-            const edge = Math.max(120, Math.floor(minEdge * 0.72))
-            return { width: edge, height: edge }
-          },
-          // No forzar aspectRatio a 1.0 para evitar OverconstrainedError en hardware móvil/webcam
         }
 
         const onScanSuccess = (decodedText: string) => {
@@ -227,7 +270,6 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         }
 
         if (currentSession !== sessionCountRef.current) {
-          // La sesión cambió o se cerró mientras iniciaba
           await stopScanner()
           return
         }
@@ -235,6 +277,22 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         if (started) {
           isScanningRef.current = true
           setCameraLoading(false)
+
+          // Asegurar que el video se esté reproduciendo activamente y con atributos correctos
+          if (container) {
+            ensureVideoPlaying(container)
+            // Doble chequeo en 200ms y 500ms por seguridad ante retardos de hardware móvil
+            setTimeout(() => {
+              if (container && currentSession === sessionCountRef.current) {
+                ensureVideoPlaying(container)
+              }
+            }, 200)
+            setTimeout(() => {
+              if (container && currentSession === sessionCountRef.current) {
+                ensureVideoPlaying(container)
+              }
+            }, 500)
+          }
 
           // Enumerar cámaras disponibles de forma segura sin interrumpir el stream
           try {
@@ -291,7 +349,7 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         setCameraError(msg)
       }
     },
-    [handleScanSuccess, stopScanner]
+    [handleScanSuccess, stopScanner, ensureVideoPlaying]
   )
 
   // Iniciar/Detener según apertura del modal y modo
@@ -398,27 +456,30 @@ export function QRScannerModal({ open, onOpenChange }: QRScannerModalProps) {
         </DialogHeader>
 
         {mode === 'camera' ? (
-          <div className="relative w-full flex flex-col items-center bg-black min-h-[380px]">
+          <div className="relative w-full h-[400px] bg-black overflow-hidden flex items-center justify-center">
             {/* Contenedor donde Html5Qrcode monta el stream de video */}
             <div
               id={readerElementId}
-              className="w-full h-full min-h-[360px] flex items-center justify-center overflow-hidden [&_video]:w-full [&_video]:h-full [&_video]:object-cover"
+              className="w-full h-full relative overflow-hidden [&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&_video]:!block [&_video]:!absolute [&_video]:!inset-0 [&_video]:!z-0 [&_#qr-shaded-region]:!hidden [&_canvas]:!hidden"
             />
 
             {/* Overlay visual del visor de escaneo */}
             {!cameraLoading && !cameraError && (
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                {/* Cuadro de enfoque */}
-                <div className="relative w-64 h-64 rounded-2xl border-2 border-violet-500/40 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                  {/* Esquinas estilizadas */}
-                  <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-violet-400 rounded-tl-xl" />
-                  <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-violet-400 rounded-tr-xl" />
-                  <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-violet-400 rounded-bl-xl" />
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-violet-400 rounded-br-xl" />
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10">
+                {/* Cuadro de enfoque limpio sin shadow hack para evitar incompatibilidades de GPU en móviles */}
+                <div className="relative w-64 h-64 rounded-2xl border-2 border-violet-500/40">
+                  {/* Esquinas estilizadas iluminadas */}
+                  <div className="absolute -top-1 -left-1 w-7 h-7 border-t-4 border-l-4 border-violet-400 rounded-tl-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -top-1 -right-1 w-7 h-7 border-t-4 border-r-4 border-violet-400 rounded-tr-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -bottom-1 -left-1 w-7 h-7 border-b-4 border-l-4 border-violet-400 rounded-bl-xl shadow-[0_0_10px_#a855f7]" />
+                  <div className="absolute -bottom-1 -right-1 w-7 h-7 border-b-4 border-r-4 border-violet-400 rounded-br-xl shadow-[0_0_10px_#a855f7]" />
 
                   {/* Línea láser animada */}
                   <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent shadow-[0_0_8px_#a855f7] animate-pulse top-1/2 -translate-y-1/2" />
                 </div>
+                <p className="mt-4 text-xs font-medium text-gray-300/80 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
+                  Enfoca el código QR en el recuadro
+                </p>
               </div>
             )}
 
